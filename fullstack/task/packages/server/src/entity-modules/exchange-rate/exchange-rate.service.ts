@@ -20,6 +20,8 @@ export class ExchangeRateService {
     async getRates(): Promise<ExchangeRate[]> {
         const now = new Date();
         const fiveMinutesAgo = new Date(now.getTime() - this.CACHE_TTL_MS);
+
+        // Step 1: try to get fresh cached rates
         const freshRates = await this.repo.find({
             where: {
                 updatedAtUtc: MoreThan(fiveMinutesAgo),
@@ -33,18 +35,44 @@ export class ExchangeRateService {
             return freshRates;
         }
 
+        // Step 2: if a fetch is already in progress, wait for it
         if (this.fetchingPromise) {
             this.logger.log('Another request is fetching rates, waiting...');
-            return this.fetchingPromise;
+            try {
+                await this.fetchingPromise;
+            } catch {
+                // Ignore fetch errors here; we will fallback to stale cache below
+            }
+            const cachedRates = await this.repo.find({
+                where: { deleteDateUtc: IsNull() },
+                order: { currencyCode: 'ASC' },
+            });
+            this.logger.log(
+                `Returning ${cachedRates.length} cached rates after waiting for ongoing fetch`
+            );
+            return cachedRates;
         }
 
+        // Step 3: fetch fresh rates
         this.logger.log('Cache expired, fetching fresh data from CNB API...');
-
         this.fetchingPromise = this.fetchAndCacheRates().finally(() => {
             this.fetchingPromise = null;
         });
 
-        return this.fetchingPromise;
+        try {
+            await this.fetchingPromise;
+        } catch {
+            this.logger.warn('Fetch failed, returning stale cache');
+        }
+
+        // Step 4: return whatever is in the cache
+        const rates = await this.repo.find({
+            where: { deleteDateUtc: IsNull() },
+            order: { currencyCode: 'ASC' },
+        });
+
+        this.logger.log(`Returning ${rates.length} rates from cache`);
+        return rates;
     }
 
     private async fetchAndCacheRates(): Promise<ExchangeRate[]> {
