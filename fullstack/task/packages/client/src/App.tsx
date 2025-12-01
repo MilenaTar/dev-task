@@ -1,5 +1,7 @@
+import { AppRouter } from './router';
+
 function App() {
-    return <p>TODO</p>;
+    return <AppRouter />;
 }
 
 export default App;
