@@ -53,7 +53,6 @@ export class ExchangeRateService {
             return cachedRates;
         }
 
-        // Step 3: fetch fresh rates
         this.logger.log('Cache expired, fetching fresh data from CNB API...');
         this.fetchingPromise = this.fetchAndCacheRates().finally(() => {
             this.fetchingPromise = null;
@@ -65,7 +64,6 @@ export class ExchangeRateService {
             this.logger.warn('Fetch failed, returning stale cache');
         }
 
-        // Step 4: return whatever is in the cache
         const rates = await this.repo.find({
             where: { deleteDateUtc: IsNull() },
             order: { currencyCode: 'ASC' },
